@@ -1,6 +1,9 @@
 package log
 
 import (
+	"bytes"
+	"encoding/gob"
+
 	"github.com/haardikk21/go-ipfs-log/pkg/identity"
 	"github.com/ipfs/go-ipfs/core"
 	"github.com/pkg/errors"
@@ -15,6 +18,8 @@ type Entry struct {
 	Clock    LamportClock
 	Hash     string
 	Version  int
+	Key      []byte
+	Sig      []byte
 }
 
 func NewEntry(ipfs *core.IpfsNode, identity *identity.Identity, logID string, data interface{}, next []interface{}, clock LamportClock) (*Entry, error) {
@@ -47,13 +52,30 @@ func NewEntry(ipfs *core.IpfsNode, identity *identity.Identity, logID string, da
 	}
 
 	entry := Entry{
-		Hash:    "",
 		LogID:   logID,
 		Payload: data,
 		Next:    nexts,
 		Version: 2,
 		Clock:   clock,
 	}
+
+	var buf bytes.Buffer
+
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(entry)
+	if err != nil {
+		return nil, err
+	}
+
+	signature, err := identity.Provider.SignIdentity(buf.Bytes(), "application/octet-stream")
+	if err != nil {
+		return nil, err
+	}
+
+	entry.Key = identity.PublicKey
+	entry.Identity = identity
+	entry.Sig = signature
+	entry.Hash = ""
 
 	return &entry, nil
 
